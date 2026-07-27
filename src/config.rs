@@ -542,6 +542,14 @@ pub fn store_path<T: serde::Serialize>(path: PathBuf, cfg: T) -> crate::ResultTy
     }
 }
 
+/// On-disk form of the server-pushed locked ("managed") options. Wrapped in a
+/// struct (not a bare map) to match the confy round-trip pattern used elsewhere.
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct ManagedOverwrite {
+    #[serde(default)]
+    options: HashMap<String, String>,
+}
+
 impl Config {
     fn load_<T: serde::Serialize + serde::de::DeserializeOwned + Default + std::fmt::Debug>(
         suffix: &str,
@@ -621,6 +629,41 @@ impl Config {
     fn file_(suffix: &str) -> PathBuf {
         let name = format!("{}{}", *APP_NAME.read().unwrap(), suffix);
         Config::with_extension(Self::path(name))
+    }
+
+    /// Path of the persisted server-pushed locked ("managed") options file.
+    fn managed_overwrite_file() -> PathBuf {
+        Config::with_extension(Self::path("managed_overwrite"))
+    }
+
+    /// Server-pushed locked options persisted locally (strategy/config-push).
+    pub fn load_managed_overwrite() -> HashMap<String, String> {
+        let m: ManagedOverwrite = load_path(Self::managed_overwrite_file());
+        m.options
+    }
+
+    /// Merge the persisted managed (locked) options into `OVERWRITE_SETTINGS` so
+    /// the settings UI greys them out. Call once at startup.
+    pub fn apply_managed_overwrite() {
+        let map = Self::load_managed_overwrite();
+        if map.is_empty() {
+            return;
+        }
+        let mut w = OVERWRITE_SETTINGS.write().unwrap();
+        for (k, v) in map {
+            w.insert(k, v);
+        }
+    }
+
+    /// Persist the server-pushed locked options (only these keys) so they survive
+    /// restarts.
+    pub fn save_managed_overwrite(map: &HashMap<String, String>) {
+        let _ = store_path(
+            Self::managed_overwrite_file(),
+            ManagedOverwrite {
+                options: map.clone(),
+            },
+        );
     }
 
     pub fn is_empty(&self) -> bool {

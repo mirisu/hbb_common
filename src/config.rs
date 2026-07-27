@@ -632,7 +632,21 @@ impl Config {
     }
 
     /// Path of the persisted server-pushed locked ("managed") options file.
+    ///
+    /// On Windows this is a machine-wide, shared location (`%ProgramData%\<App>\`)
+    /// so the installed SERVICE (SYSTEM account) that receives the strategy and
+    /// the logged-in user's UI process read/write the SAME file. Without this the
+    /// two processes use different per-profile config dirs, so the UI would never
+    /// see the locks the service applied (settings wouldn't grey out).
     fn managed_overwrite_file() -> PathBuf {
+        #[cfg(windows)]
+        if let Ok(pd) = std::env::var("ProgramData") {
+            let app = APP_NAME.read().unwrap().clone();
+            let mut p = std::path::PathBuf::from(pd);
+            p.push(app);
+            p.push("managed_overwrite");
+            return Config::with_extension(p);
+        }
         Config::with_extension(Self::path("managed_overwrite"))
     }
 
